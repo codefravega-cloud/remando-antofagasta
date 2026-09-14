@@ -4,11 +4,16 @@
   const remote = CONFIG.supabase || {};
   const db = remote.url && remote.anonKey && window.supabase ? window.supabase.createClient(remote.url, remote.anonKey) : null;
   let state = { services: [], slots: [], bookings: [], settings: {} };
-  const esc = value => String(value || "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
+  let bookingFilter = "all";
+  const esc = value => String(value || "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+  const money = value => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(value || 0));
   const dateLabel = value => new Intl.DateTimeFormat("es-CL", { weekday: "short", day: "numeric", month: "short", timeZone: "America/Santiago" }).format(new Date(value));
   const timeLabel = value => new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Santiago" }).format(new Date(value));
-  const service = id => state.services.find(item => item.id === id) || { name: "Salida", detail: "" };
+  const inputDate = value => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Santiago" }).format(new Date(value));
+  const service = id => state.services.find(item => item.id === id) || { name: "Salida", detail: "", price: 0 };
+  const slotFor = booking => state.slots.find(slot => slot.id === booking.slot_id);
   const count = slotId => state.bookings.filter(item => item.slot_id === slotId && item.status !== "cancelled").length;
+  const statusLabel = status => ({ pending: "pendiente", confirmed: "confirmada", cancelled: "cancelada" }[status] || status);
 
   async function loadState() {
     const [services, slots, bookings, settings] = await Promise.all([
@@ -21,78 +26,104 @@
     state = { services: services.data || [], slots: slots.data || [], bookings: bookings.data || [], settings: Object.fromEntries((settings.data || []).map(item => [item.key, item.value])) };
   }
 
-  function render() {
+  function filteredBookings() {
+    const search = (document.querySelector("[data-booking-search]")?.value || "").trim().toLowerCase();
+    return state.bookings.filter(item => {
+      const matchesStatus = bookingFilter === "all" || item.status === bookingFilter;
+      const haystack = `${item.name} ${item.phone} ${item.email}`.toLowerCase();
+      return matchesStatus && (!search || haystack.includes(search));
+    });
+  }
+
+  function renderStats() {
+    const upcoming = state.slots.filter(item => item.active && new Date(item.starts_at) >= new Date()).length;
     const pending = state.bookings.filter(item => item.status === "pending").length;
-    const confirmed = state.bookings.filter(item => item.status === "confirmed").length;
-    document.querySelector("[data-stats]").innerHTML = `<article class="stat"><span>Horas activas</span><strong>${state.slots.filter(item => item.active).length}</strong></article><article class="stat"><span>Por confirmar</span><strong>${pending}</strong></article><article class="stat"><span>Reservas confirmadas</span><strong>${confirmed}</strong></article>`;
-    document.querySelector("[data-slots-admin]").innerHTML = state.slots.length ? state.slots.map(slot => `<article class="admin-row"><div><strong>${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}</strong><p>${count(slot.id)} de ${slot.capacity} cupos reservados · ${slot.active ? "Visible en la web" : "Oculto"}</p></div><div class="row-actions"><button class="small-btn" data-toggle-slot="${slot.id}">${slot.active ? "Ocultar" : "Activar"}</button><button class="icon-button" data-delete-slot="${slot.id}" aria-label="Eliminar horario">×</button></div></article>`).join("") : "<p class=\"empty-admin\">Aún no agregas horarios.</p>";
-    document.querySelector("[data-bookings-admin]").innerHTML = state.bookings.length ? state.bookings.map(item => { const slot = state.slots.find(row => row.id === item.slot_id); return `<article class="admin-row"><div><strong>${esc(item.name)} <span class="status ${item.status}">${item.status === "pending" ? "pendiente" : item.status === "confirmed" ? "confirmada" : "cancelada"}</span></strong><p>${slot ? `${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}` : "Horario eliminado"}</p><small>WhatsApp ${esc(item.phone)} · emergencia: ${esc(item.emergency_name)} (${esc(item.emergency_phone)})${item.health_info ? " · información de seguridad registrada" : ""}</small></div><div class="row-actions"><button class="small-btn" data-booking-status="${item.id}" data-next-status="confirmed">Confirmar</button><button class="small-btn" data-booking-status="${item.id}" data-next-status="cancelled">Cancelar</button></div></article>`; }).join("") : "<p class=\"empty-admin\">Todavía no llegan solicitudes.</p>";
-    document.querySelector("[data-price-form]").innerHTML = state.services.map(item => `<label class="price-line"><span><strong>${esc(item.name)}</strong><span>${esc(item.detail)}</span></span><input data-price-id="${item.id}" type="number" min="0" value="${item.price ?? ""}" aria-label="Valor de ${esc(item.name)}" /></label>`).join("") + "<button class=\"btn btn-dark\" type=\"submit\">Guardar valores →</button><p class=\"form-status\" data-price-status></p>";
+    const confirmed = state.bookings.filter(item => item.status === "confirmed");
+    const clients = new Set(state.bookings.filter(item => item.status !== "cancelled").map(item => `${item.name}|${item.phone}`.toLowerCase())).size;
+    const income = confirmed.reduce((sum, item) => sum + Number(service(slotFor(item)?.service_id).price || 0), 0);
+    document.querySelector("[data-stats]").innerHTML = `
+      <article class="stat"><span>Próximas salidas</span><strong>${upcoming}</strong></article>
+      <article class="stat"><span>Por confirmar</span><strong>${pending}</strong></article>
+      <article class="stat"><span>Confirmadas</span><strong>${confirmed.length}</strong></article>
+      <article class="stat"><span>Clientes activos</span><strong>${clients}</strong></article>
+      <article class="stat income"><span>Ingreso confirmado</span><strong>${money(income)}</strong></article>`;
+  }
+
+  function renderSlots() {
+    const target = document.querySelector("[data-slots-admin]");
+    target.innerHTML = state.slots.length ? state.slots.map(slot => `<article class="admin-row slot-row"><div><strong>${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}</strong><p>${count(slot.id)} de ${slot.capacity} cupos reservados · ${slot.active ? "Visible en la web" : "Oculto"}</p></div><div class="row-actions"><button class="small-btn" data-edit-slot="${slot.id}">Editar</button><button class="small-btn" data-toggle-slot="${slot.id}">${slot.active ? "Ocultar" : "Activar"}</button><button class="icon-button" data-delete-slot="${slot.id}" aria-label="Eliminar horario">×</button></div></article>`).join("") : "<p class=\"empty-admin\">Aún no agregas horarios.</p>";
+  }
+
+  function renderBookings() {
+    const target = document.querySelector("[data-bookings-admin]");
+    const rows = filteredBookings();
+    target.innerHTML = rows.length ? rows.map(item => {
+      const slot = slotFor(item); const salida = slot ? `${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}` : "Horario eliminado";
+      return `<article class="admin-row booking-row"><div><strong>${esc(item.name)} <span class="status ${esc(item.status)}">${statusLabel(item.status)}</span></strong><p>${salida}</p><small>${esc(item.phone)} · reserva ${new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "2-digit" }).format(new Date(item.created_at))}</small></div><div class="row-actions"><button class="small-btn" data-view-booking="${item.id}">Ver ficha</button>${item.status !== "confirmed" ? `<button class="small-btn" data-booking-status="${item.id}" data-next-status="confirmed">Confirmar</button>` : ""}${item.status !== "cancelled" ? `<button class="small-btn is-danger" data-booking-status="${item.id}" data-next-status="cancelled">Cancelar</button>` : ""}</div></article>`;
+    }).join("") : "<p class=\"empty-admin\">No hay clientes con este filtro.</p>";
+  }
+
+  function renderEditors() {
+    document.querySelector("[data-price-form]").innerHTML = state.services.filter(item => item.active !== false).map(item => `<label class="price-line"><span><strong>${esc(item.name)}</strong><span>${esc(item.detail)}</span></span><input data-price-id="${item.id}" type="number" min="0" value="${item.price ?? ""}" aria-label="Valor de ${esc(item.name)}" /></label>`).join("") + "<button class=\"btn btn-dark\" type=\"submit\">Guardar valores →</button><p class=\"form-status\" data-price-status></p>";
     const settings = document.querySelector("[data-settings-form]");
     settings.elements.whatsappNumber.value = state.settings.whatsappNumber || "";
     settings.elements.location.value = state.settings.location || CONFIG.location || "Balneario Municipal, Antofagasta";
-    document.querySelector("[data-service-options]").innerHTML = state.services.map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("");
+    document.querySelector("[data-service-options]").innerHTML = state.services.filter(item => item.active !== false).map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("");
   }
 
+  function render() { renderStats(); renderSlots(); renderBookings(); renderEditors(); }
   async function refresh() { await loadState(); render(); }
-  function showStatus(selector, text, type) { const target = document.querySelector(selector); target.textContent = text; target.className = `form-status ${type || ""}`; }
+  function showStatus(selector, text, type) { const target = document.querySelector(selector); if (!target) return; target.textContent = text; target.className = `form-status ${type || ""}`; }
   async function ensureAdmin() { const { data, error } = await db.rpc("is_admin"); if (error || !data) throw new Error("Esta cuenta no tiene acceso de instructor."); }
 
-  async function openApp() {
-    await ensureAdmin();
-    document.querySelector("[data-login]").hidden = true;
-    document.querySelector("[data-admin-app]").hidden = false;
-    await refresh();
+  function openSlotDialog(slot) {
+    const dialog = document.querySelector("[data-slot-dialog]"); const form = document.querySelector("[data-slot-form]");
+    form.reset(); form.elements.slotId.value = slot?.id || "";
+    document.querySelector("[data-slot-dialog-title]").textContent = slot ? "Editar horario" : "Nuevo horario";
+    document.querySelector("[data-slot-save]").textContent = slot ? "Guardar cambios →" : "Agregar horario →";
+    if (slot) { form.elements.date.value = inputDate(slot.starts_at); form.elements.time.value = timeLabel(slot.starts_at); form.elements.serviceId.value = slot.service_id; form.elements.capacity.value = slot.capacity; }
+    dialog.showModal();
   }
+
+  function openBookingDialog(id) {
+    const booking = state.bookings.find(item => item.id === id); if (!booking) return;
+    const slot = slotFor(booking); const whatsApp = String(booking.phone || "").replace(/\D/g, "");
+    const departure = slot ? `${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}` : "Horario eliminado";
+    document.querySelector("[data-booking-detail]").innerHTML = `<div class="client-sheet"><div><span>Cliente</span><strong>${esc(booking.name)}</strong></div><div><span>Salida</span><strong>${departure}</strong></div><div><span>Estado</span><strong><span class="status ${esc(booking.status)}">${statusLabel(booking.status)}</span></strong></div><div><span>WhatsApp</span><strong>${esc(booking.phone)} ${whatsApp ? `<a href="https://wa.me/${whatsApp}" target="_blank" rel="noreferrer">Abrir chat ↗</a>` : ""}</strong></div><div><span>Correo</span><strong>${esc(booking.email || "No informado")}</strong></div><div><span>Edad</span><strong>${esc(booking.age || "No informada")}</strong></div><div><span>Contacto de emergencia</span><strong>${esc(booking.emergency_name)} · ${esc(booking.emergency_phone)}</strong></div><div class="client-sheet-wide"><span>Información relevante para la actividad</span><strong>${esc(booking.health_info || "No informó antecedentes.")}</strong></div></div>`;
+    document.querySelector("[data-booking-dialog]").showModal();
+  }
+
+  async function openApp() { await ensureAdmin(); document.querySelector("[data-login]").hidden = true; document.querySelector("[data-admin-app]").hidden = false; await refresh(); }
 
   function setup() {
     const login = document.querySelector("[data-login-form]");
     if (!db) { showStatus("[data-login-status]", "Falta la configuración de Supabase.", "error"); return; }
     db.auth.getSession().then(({ data }) => { if (data.session) openApp().catch(error => showStatus("[data-login-status]", error.message, "error")); });
-    login.addEventListener("submit", async event => {
-      event.preventDefault();
-      const email = new FormData(login).get("email").trim();
-      const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
-      showStatus("[data-login-status]", error ? error.message : "Revisa tu correo y abre el enlace seguro para entrar.", error ? "error" : "success");
-    });
+    login.addEventListener("submit", async event => { event.preventDefault(); const email = new FormData(login).get("email").trim(); const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } }); showStatus("[data-login-status]", error ? error.message : "Revisa tu correo y abre el enlace seguro para entrar.", error ? "error" : "success"); });
     document.querySelector("[data-logout]").addEventListener("click", async () => { await db.auth.signOut(); document.querySelector("[data-admin-app]").hidden = true; document.querySelector("[data-login]").hidden = false; });
+    document.querySelector("[data-refresh]").addEventListener("click", () => refresh().catch(error => alert(error.message || "No pudimos actualizar los datos.")));
+    document.querySelector("[data-booking-search]").addEventListener("input", renderBookings);
+    document.querySelector("[data-close-booking]").addEventListener("click", () => document.querySelector("[data-booking-dialog]").close());
     document.addEventListener("click", async event => {
-      const toggle = event.target.closest("[data-toggle-slot]"); const remove = event.target.closest("[data-delete-slot]"); const status = event.target.closest("[data-booking-status]");
+      const toggle = event.target.closest("[data-toggle-slot]"); const remove = event.target.closest("[data-delete-slot]"); const status = event.target.closest("[data-booking-status]"); const edit = event.target.closest("[data-edit-slot]"); const view = event.target.closest("[data-view-booking]"); const filter = event.target.closest("[data-booking-filter]");
       try {
-        if (toggle) { const row = state.slots.find(item => item.id === toggle.dataset.toggleSlot); await db.from("slots").update({ active: !row.active }).eq("id", row.id); await refresh(); }
-        if (remove) { await db.from("slots").delete().eq("id", remove.dataset.deleteSlot); await refresh(); }
-        if (status) { await db.from("bookings").update({ status: status.dataset.nextStatus }).eq("id", status.dataset.bookingStatus); await refresh(); }
+        if (filter) { bookingFilter = filter.dataset.bookingFilter; document.querySelectorAll("[data-booking-filter]").forEach(button => button.classList.toggle("is-active", button === filter)); renderBookings(); }
+        if (edit) openSlotDialog(state.slots.find(item => item.id === edit.dataset.editSlot));
+        if (view) openBookingDialog(view.dataset.viewBooking);
+        if (toggle) { const row = state.slots.find(item => item.id === toggle.dataset.toggleSlot); const { error } = await db.from("slots").update({ active: !row.active }).eq("id", row.id); if (error) throw error; await refresh(); }
+        if (remove) { const { error } = await db.from("slots").delete().eq("id", remove.dataset.deleteSlot); if (error) throw error; await refresh(); }
+        if (status) { const { error } = await db.from("bookings").update({ status: status.dataset.nextStatus }).eq("id", status.dataset.bookingStatus); if (error) throw error; await refresh(); }
       } catch (error) { alert(error.message || "No pudimos guardar el cambio."); }
     });
-    const dialog = document.querySelector("[data-slot-dialog]");
-    document.querySelector("[data-open-slot]").addEventListener("click", () => dialog.showModal());
+    document.querySelector("[data-open-slot]").addEventListener("click", () => openSlotDialog());
     document.querySelector("[data-slot-form]").addEventListener("submit", async event => {
-      event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries());
-      const startsAt = new Date(`${values.date}T${values.time}:00`).toISOString();
-      const { error } = await db.from("slots").insert({ starts_at: startsAt, service_id: values.serviceId, capacity: Number(values.capacity), active: true });
-      if (error) { alert(error.message); return; } dialog.close(); event.currentTarget.reset(); await refresh();
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries()); const payload = { starts_at: new Date(`${values.date}T${values.time}:00`).toISOString(), service_id: values.serviceId, capacity: Number(values.capacity), active: true };
+      const result = values.slotId ? await db.from("slots").update(payload).eq("id", values.slotId) : await db.from("slots").insert(payload);
+      if (result.error) { alert(result.error.message); return; } document.querySelector("[data-slot-dialog]").close(); await refresh();
     });
-    document.querySelector("[data-price-form]").addEventListener("submit", async event => {
-      event.preventDefault();
-      for (const input of event.currentTarget.querySelectorAll("[data-price-id]")) {
-        const price = input.value === "" ? null : Number(input.value);
-        const { error } = await db.from("services").update({ price }).eq("id", input.dataset.priceId);
-        if (error) { showStatus("[data-price-status]", error.message, "error"); return; }
-      }
-      showStatus("[data-price-status]", "Valores actualizados en la web.", "success"); await refresh();
-    });
-    document.querySelector("[data-settings-form]").addEventListener("submit", async event => {
-      event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries());
-      const rows = Object.entries(values).map(([key, value]) => ({ key, value: value.trim(), updated_at: new Date().toISOString() }));
-      const { error } = await db.from("business_settings").upsert(rows);
-      showStatus("[data-settings-status]", error ? error.message : "Ajustes guardados en la web.", error ? "error" : "success"); if (!error) await refresh();
-    });
-    document.querySelector("[data-export]").addEventListener("click", () => {
-      const header = ["estado", "nombre", "whatsapp", "correo", "edad", "emergencia", "teléfono emergencia", "información relevante", "fecha solicitud"];
-      const rows = state.bookings.map(item => [item.status, item.name, item.phone, item.email, item.age, item.emergency_name, item.emergency_phone, item.health_info, item.created_at]);
-      const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell || "").replace(/"/g, '""')}"`).join(",")).join("\n");
-      const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" })); link.download = `reservas-remando-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
-    });
+    document.querySelector("[data-price-form]").addEventListener("submit", async event => { event.preventDefault(); for (const input of event.currentTarget.querySelectorAll("[data-price-id]")) { const price = input.value === "" ? null : Number(input.value); const { error } = await db.from("services").update({ price }).eq("id", input.dataset.priceId); if (error) { showStatus("[data-price-status]", error.message, "error"); return; } } showStatus("[data-price-status]", "Valores actualizados en la web.", "success"); await refresh(); });
+    document.querySelector("[data-settings-form]").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); const rows = Object.entries(values).map(([key, value]) => ({ key, value: value.trim(), updated_at: new Date().toISOString() })); const { error } = await db.from("business_settings").upsert(rows); showStatus("[data-settings-status]", error ? error.message : "Ajustes guardados en la web.", error ? "error" : "success"); if (!error) await refresh(); });
+    document.querySelector("[data-export]").addEventListener("click", () => { const header = ["estado", "nombre", "whatsapp", "correo", "edad", "emergencia", "teléfono emergencia", "información relevante", "fecha solicitud"]; const rows = state.bookings.map(item => [item.status, item.name, item.phone, item.email, item.age, item.emergency_name, item.emergency_phone, item.health_info, item.created_at]); const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell || "").replace(/"/g, '""')}"`).join(",")).join("\n"); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" })); link.download = `reservas-remando-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href); });
   }
   document.addEventListener("DOMContentLoaded", setup);
 })();
