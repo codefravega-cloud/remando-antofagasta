@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Playfair+Display:ital,wght@0,600;0,700;1,600;1,700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260914-supabase" />
+    <link rel="stylesheet" href="styles.css?v=20260914-mar-y-valores" />
     <link rel="stylesheet" href="instagram.css?v=20260914-supabase" />
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script defer src="assets/config.js?v=20260914-supabase"></script>
-    <script defer src="main.js?v=20260914-supabase"></script>
+    <script defer src="main.js?v=20260914-mar-y-valores"></script>
   </head>
   <body>
     <div class="ocean-grain" aria-hidden="true"></div>
@@ -72,12 +72,12 @@
           <p class="eyebrow">Una ciudad frente al Pacífico</p>
           <h2 class="display light">La costa se vive<br />mejor <em>desde dentro.</em></h2>
           <p>Rocas, sol del norte y el océano abriendo la mañana. Los tours al amanecer y atardecer permiten ver cómo cambia Antofagasta cuando la ciudad se mira desde el Pacífico.</p>
-          <div class="coast-details"><span>Salidas habituales</span><strong>Jueves 09:00 · fines de semana</strong><span>Punto de encuentro</span><strong>Balneario Municipal</strong></div>
+          <div class="coast-details"><span>Clases de Yoga SUP</span><strong>Jueves · sábado · domingo</strong><span>Punto de encuentro</span><strong>Balneario Municipal</strong></div>
         </div>
         <svg class="wave wave-dark" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0,85 C205,30 460,145 710,75 C970,5 1230,124 1440,55 L1440,160 L0,160Z"></path></svg>
       </section>
 
-      <section class="coast-watch" id="mar-hoy" aria-labelledby="coast-watch-title">
+      <section class="coast-watch sea-hub" id="mar-hoy" aria-labelledby="coast-watch-title">
         <div class="coast-watch-photo">
           <img src="https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1a/The_Coast_of_Antofagasta_%28pzidar_paranal_lv-5%29.jpg/1280px-The_Coast_of_Antofagasta_%28pzidar_paranal_lv-5%29.jpg?utm_source=commons.wikimedia.org&amp;utm_campaign=imageinfo&amp;utm_content=thumbnail" alt="Vista real de la costa de Antofagasta con el océano Pacífico y la cordillera costera" loading="lazy" decoding="async" />
           <div class="coast-watch-shade" aria-hidden="true"></div>
@@ -97,27 +97,23 @@
           <p class="weather-note" data-weather-note>Datos referenciales para Antofagasta. Confirma tu hora antes de salir.</p>
           <p class="photo-credit">Fotografía de la costa: <a href="https://commons.wikimedia.org/wiki/File:The_Coast_of_Antofagasta_(pzidar_paranal_lv-5).jpg" target="_blank" rel="noreferrer">P. Zidar / ESO · CC BY 4.0 ↗</a></p>
         </div>
-      </section>
-
-      <section class="sea-map section-pad" aria-labelledby="sea-map-title">
-        <div class="sea-map-heading">
-          <div><p class="eyebrow">Mapa 24/7</p><h2 id="sea-map-title" class="display">El movimiento<br /><em>del mar, en vivo.</em></h2></div>
-          <p>El mapa parte directamente en el Balneario Municipal. Puedes acercarte a la playa y revisar la evolución prevista de olas antes de elegir una hora.</p>
-        </div>
-        <div class="sea-map-frame">
+        <aside class="sea-map-inline" aria-labelledby="sea-map-title">
+          <div class="sea-map-inline-heading"><p class="eyebrow">Mapa 24/7</p><h3 id="sea-map-title">Oleaje en<br /><em>Balneario Municipal.</em></h3><p>Revisa el pronóstico de olas justo donde comienzan las salidas.</p></div>
+          <div class="sea-map-frame">
           <div class="sea-map-badge"><span></span> Olas · Balneario Municipal</div>
           <iframe title="Mapa interactivo de oleaje en Balneario Municipal, Antofagasta" src="https://embed.windy.com/embed2.html?lat=-23.67082&amp;lon=-70.40891&amp;detailLat=-23.67082&amp;detailLon=-70.40891&amp;width=1200&amp;height=650&amp;zoom=14&amp;level=surface&amp;overlay=waves&amp;product=ecmwfWaves&amp;menu=true&amp;message=true&amp;marker=true&amp;calendar=now&amp;pressure=true&amp;type=map&amp;location=coordinates&amp;detail=true&amp;metricWind=km%2Fh&amp;metricTemp=%C2%B0C&amp;radarRange=-1" loading="lazy"></iframe>
-        </div>
-        <div class="sea-map-foot"><p>El mapa es un pronóstico modelado, no reemplaza la evaluación del guía en el Balneario Municipal.</p><a href="https://www.windy.com/-Waves-waves?waves,-23.67082,-70.40891,14" target="_blank" rel="noreferrer">Abrir mapa de olas a pantalla completa ↗</a></div>
+          </div>
+          <div class="sea-map-foot"><p>Pronóstico modelado; el guía confirma la seguridad antes de entrar.</p><a href="https://www.windy.com/-Waves-waves?waves,-23.67082,-70.40891,14" target="_blank" rel="noreferrer">Abrir en pantalla completa ↗</a></div>
+        </aside>
       </section>
 
       <section class="pricing section-pad" id="tarifas" aria-labelledby="pricing-title">
-        <div class="section-heading"><div><p class="eyebrow light">Valores</p><h2 id="pricing-title" class="display light">Elige cómo<br /><em>quieres salir.</em></h2></div><p class="light">El tour guiado publicado tiene un valor de $20.000 por persona. Las actividades especiales se cotizan según fecha, grupo y formato.</p></div>
+        <div class="section-heading"><div><p class="eyebrow light">Valores</p><h2 id="pricing-title" class="display light">Elige cómo<br /><em>quieres salir.</em></h2></div><p class="light">Clases, arriendos y paseos con valores claros. Cada salida se confirma según cupos y condiciones del mar.</p></div>
         <div class="price-grid" data-pricing-grid></div>
       </section>
 
       <section class="booking section-pad" id="reserva" aria-labelledby="booking-title">
-        <div class="booking-heading"><p class="eyebrow">Agenda online</p><h2 id="booking-title" class="display">Tu próxima<br /><em>salida empieza</em> aquí.</h2><p>Yoga SUP se realiza habitualmente los jueves a las 09:00 y también hay salidas de fin de semana. Todo horario queda sujeto a cupos y condiciones del mar.</p><div class="safe-note"><span>✓</span><p>Tus datos de salud se solicitan únicamente para cuidar la actividad. No se comparten por WhatsApp.</p></div></div>
+        <div class="booking-heading"><p class="eyebrow">Agenda online</p><h2 id="booking-title" class="display">Tu próxima<br /><em>salida empieza</em> aquí.</h2><p>Las clases de Yoga SUP se realizan habitualmente jueves, sábado y domingo. Todo horario queda sujeto a cupos y condiciones del mar.</p><div class="safe-note"><span>✓</span><p>Tus datos de salud se solicitan únicamente para cuidar la actividad. No se comparten por WhatsApp.</p></div></div>
         <div class="booking-panel">
           <div class="step-label"><span>01</span> Elige una hora</div>
           <div class="slot-list" data-slot-list aria-live="polite"></div>

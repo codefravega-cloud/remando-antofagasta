@@ -197,10 +197,19 @@ grant execute on function public.create_booking(uuid, text, text, text, integer,
 -- Catálogo inicial. Es editable desde el panel una vez que el instructor tenga rol.
 insert into public.services (id, name, detail, price, label, featured, sort_order)
 values
-  ('tour', 'Tour guiado SUP', 'Amanecer o atardecer · 60–90 min', 20000, 'por persona', true, 10),
-  ('yoga', 'Yoga SUP', 'Jueves 09:00 y fines de semana · según clima', null, 'consulta próximas fechas', false, 20),
-  ('isla', 'Isla SUP & eventos', 'Cumpleaños, empresas y colaboraciones', null, 'cotización a medida', false, 30)
-on conflict (id) do nothing;
+  ('clase', 'Clase SUP', '1 hora · con guía', 8000, 'por persona', false, 10),
+  ('arriendo-30', 'Arriendo de tabla', '30 minutos · sin guía', 5000, 'por tabla', false, 20),
+  ('arriendo-60', 'Arriendo de tabla', '60 minutos · sin guía', 10000, 'por tabla', false, 30),
+  ('barco', 'Paseo guiado al barco', 'Salida guiada · según condiciones', 10000, 'por persona', false, 40),
+  ('tour', 'Paseo amanecer o atardecer', 'Salida guiada · según condiciones', 20000, 'por persona', true, 50),
+  ('yoga', 'Clase de Yoga SUP', 'Jueves, sábado y domingo · según clima', 20000, 'por persona', false, 60)
+on conflict (id) do update set
+  name = excluded.name,
+  detail = excluded.detail,
+  price = excluded.price,
+  label = excluded.label,
+  featured = excluded.featured,
+  sort_order = excluded.sort_order;
 
 insert into public.business_settings (key, value) values
   ('location', 'Balneario Municipal, Antofagasta'),

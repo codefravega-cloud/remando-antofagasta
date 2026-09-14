@@ -7,9 +7,12 @@
   let remoteState = null;
   const KEY = "remando-antofagasta-v1";
   const services = [
-    { id: "tour", name: "Tour guiado SUP", detail: "Amanecer o atardecer · 60–90 min", price: 20000, label: "por persona", featured: true },
-    { id: "yoga", name: "Yoga SUP", detail: "Jueves 09:00 y fines de semana · según clima", price: null, label: "consulta próximas fechas", featured: false },
-    { id: "isla", name: "Isla SUP & eventos", detail: "Cumpleaños, empresas y colaboraciones", price: null, label: "cotización a medida", featured: false }
+    { id: "clase", name: "Clase SUP", detail: "1 hora · con guía", price: 8000, label: "por persona", featured: false },
+    { id: "arriendo-30", name: "Arriendo de tabla", detail: "30 minutos · sin guía", price: 5000, label: "por tabla", featured: false },
+    { id: "arriendo-60", name: "Arriendo de tabla", detail: "60 minutos · sin guía", price: 10000, label: "por tabla", featured: false },
+    { id: "barco", name: "Paseo guiado al barco", detail: "Salida guiada · según condiciones", price: 10000, label: "por persona", featured: false },
+    { id: "tour", name: "Paseo amanecer o atardecer", detail: "Salida guiada · según condiciones", price: 20000, label: "por persona", featured: true },
+    { id: "yoga", name: "Clase de Yoga SUP", detail: "Jueves, sábado y domingo · según clima", price: 20000, label: "por persona", featured: false }
   ];
   const formatCLP = amount => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(amount);
   const dateLabel = date => new Intl.DateTimeFormat("es-CL", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${date}T12:00:00`));
@@ -20,9 +23,8 @@
       const day = new Date(base); day.setDate(base.getDate() + i);
       if (day.getDay() === 0) continue;
       const iso = day.toISOString().slice(0, 10);
-      if (day.getDay() === 4) list.push({ id: `slot-${iso}-0900`, date: iso, time: "09:00", serviceId: "yoga", capacity: 8, active: true });
+      if ([4, 6, 0].includes(day.getDay())) list.push({ id: `slot-${iso}-0900`, date: iso, time: "09:00", serviceId: "yoga", capacity: 8, active: true });
       if (day.getDay() === 6 || day.getDay() === 0) {
-        list.push({ id: `slot-${iso}-0900`, date: iso, time: "09:00", serviceId: "tour", capacity: 4, active: true });
         list.push({ id: `slot-${iso}-1800`, date: iso, time: "18:00", serviceId: "tour", capacity: 4, active: true });
       }
     }
@@ -34,7 +36,7 @@
     if (!state || !Array.isArray(state.services)) return state;
     const legacy = state.services.some(item => ["compartida", "privada", "paseo"].includes(item.id));
     if (!legacy) return state;
-    const map = { compartida: "tour", privada: "yoga", paseo: "isla" };
+    const map = { compartida: "tour", privada: "clase", paseo: "tour" };
     state.services = services;
     state.slots = (state.bookings || []).length ? (state.slots || []).map(slot => ({ ...slot, serviceId: map[slot.serviceId] || slot.serviceId })) : makeSeedSlots();
     setState(state);
