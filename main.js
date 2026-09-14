@@ -1,6 +1,10 @@
 (function () {
   "use strict";
   const CONFIG = window.REMANDO_CONFIG || {};
+  const remoteConfig = CONFIG.supabase || {};
+  const remoteEnabled = Boolean(remoteConfig.url && remoteConfig.anonKey && window.supabase);
+  const db = remoteEnabled ? window.supabase.createClient(remoteConfig.url, remoteConfig.anonKey) : null;
+  let remoteState = null;
   const KEY = "remando-antofagasta-v1";
   const services = [
     { id: "tour", name: "Tour guiado SUP", detail: "Amanecer o atardecer · 60–90 min", price: 20000, label: "por persona", featured: true },
@@ -36,10 +40,47 @@
     setState(state);
     return state;
   };
-  const getState = () => { try { const stored = JSON.parse(localStorage.getItem(KEY)); if (stored) return migrateState(stored); const initial = defaultState(); setState(initial); return initial; } catch (_) { const initial = defaultState(); setState(initial); return initial; } };
+  const getState = () => {
+    if (remoteEnabled) return remoteState || { services: [], slots: [], bookings: [], settings: { whatsappNumber: CONFIG.whatsappNumber || "", location: CONFIG.location || "Balneario Municipal, Antofagasta" } };
+    try { const stored = JSON.parse(localStorage.getItem(KEY)); if (stored) return migrateState(stored); const initial = defaultState(); setState(initial); return initial; } catch (_) { const initial = defaultState(); setState(initial); return initial; }
+  };
   const escapeHtml = str => String(str || "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
   const getService = (state, id) => state.services.find(item => item.id === id) || state.services[0];
-  const bookedCount = (state, slotId) => state.bookings.filter(item => item.slotId === slotId && item.status !== "cancelled").length;
+  const bookedCount = (state, slotId) => {
+    const slot = state.slots.find(item => item.id === slotId);
+    if (slot && Number.isInteger(slot.booked)) return slot.booked;
+    return state.bookings.filter(item => item.slotId === slotId && item.status !== "cancelled").length;
+  };
+
+  async function loadRemoteState() {
+    if (!db) return;
+    const [serviceResult, slotResult, settingsResult] = await Promise.all([
+      db.from("services").select("id,name,detail,price,label,featured,sort_order").eq("active", true).order("sort_order"),
+      db.rpc("available_slots"),
+      db.from("business_settings").select("key,value")
+    ]);
+    if (serviceResult.error) throw serviceResult.error;
+    if (slotResult.error) throw slotResult.error;
+    if (settingsResult.error) throw settingsResult.error;
+    const settings = Object.fromEntries((settingsResult.data || []).map(item => [item.key, item.value]));
+    remoteState = {
+      services: serviceResult.data || [],
+      slots: (slotResult.data || []).map(slot => {
+        const startsAt = new Date(slot.starts_at);
+        return {
+          id: slot.id,
+          date: startsAt.toLocaleDateString("en-CA", { timeZone: "America/Santiago" }),
+          time: startsAt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Santiago" }),
+          serviceId: slot.service_id,
+          capacity: slot.capacity,
+          booked: slot.capacity - slot.remaining,
+          active: true
+        };
+      }),
+      bookings: [],
+      settings: { whatsappNumber: settings.whatsappNumber || CONFIG.whatsappNumber || "", location: settings.location || CONFIG.location || "Balneario Municipal, Antofagasta" }
+    };
+  }
 
   function renderPricing() {
     const target = document.querySelector("[data-pricing-grid]"); if (!target) return;
@@ -60,12 +101,47 @@
     if (label) { const service = getService(state, slot.serviceId); label.textContent = `${dateLabel(slot.date)} · ${slot.time} · ${service.name}`; }
   }
   function handleBooking(form) {
-    form.addEventListener("submit", event => {
+    form.addEventListener("submit", async event => {
       event.preventDefault(); const status = form.querySelector("[data-form-status]");
       if (!form.reportValidity()) return;
       const state = getState(); const values = Object.fromEntries(new FormData(form).entries()); const slot = state.slots.find(item => item.id === values.slotId);
       if (!slot) { status.textContent = "Primero selecciona una hora disponible."; status.className = "form-status error"; return; }
       if (bookedCount(state, slot.id) >= slot.capacity) { renderSlots(); status.textContent = "Ese horario acaba de llenarse. Elige otro cupo."; status.className = "form-status error"; return; }
+      if (db) {
+        const submit = form.querySelector("button[type=submit]");
+        submit.disabled = true;
+        status.textContent = "Enviando solicitud…";
+        status.className = "form-status";
+        const { error } = await db.rpc("create_booking", {
+          p_slot_id: slot.id,
+          p_name: values.name.trim(),
+          p_phone: values.phone.trim(),
+          p_email: values.email.trim(),
+          p_age: Number(values.age),
+          p_emergency_name: values.emergencyName.trim(),
+          p_emergency_phone: values.emergencyPhone.trim(),
+          p_health_info: values.healthInfo.trim(),
+          p_consent_at: new Date().toISOString()
+        });
+        submit.disabled = false;
+        if (error) {
+          status.textContent = error.message || "No pudimos enviar la solicitud. Inténtalo de nuevo.";
+          status.className = "form-status error";
+          return;
+        }
+        await loadRemoteState();
+        renderSlots();
+        form.reset();
+        status.textContent = "Solicitud enviada. Te contactaremos para confirmar tu salida.";
+        status.className = "form-status success";
+        const whatsapp = getState().settings.whatsappNumber || CONFIG.whatsappNumber;
+        if (whatsapp) {
+          const service = getService(getState(), slot.serviceId);
+          const message = `Hola, soy ${values.name.trim()}. Envié una solicitud para ${service.name} el ${dateLabel(slot.date)} a las ${slot.time}. ¿Me confirman disponibilidad?`;
+          window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+        }
+        return;
+      }
       const booking = { id: `res-${Date.now()}`, slotId: slot.id, name: values.name.trim(), phone: values.phone.trim(), email: values.email.trim(), age: values.age, emergencyName: values.emergencyName.trim(), emergencyPhone: values.emergencyPhone.trim(), healthInfo: values.healthInfo.trim(), consentAt: new Date().toISOString(), createdAt: new Date().toISOString(), status: "pending" };
       state.bookings.push(booking); setState(state); renderSlots(); form.reset();
       status.textContent = "Solicitud enviada. Te contactaremos para confirmar tu salida."; status.className = "form-status success";
@@ -117,6 +193,16 @@
     document.addEventListener("click", event => { const slot = event.target.closest("[data-slot-id]"); if (slot) selectSlot(slot.dataset.slotId); const service = event.target.closest("[data-service-choice]"); if (service) { document.querySelector("#reserva").scrollIntoView({ behavior: "smooth" }); setTimeout(() => { const state = getState(); const next = state.slots.find(slot => slot.serviceId === service.dataset.serviceChoice && slot.active && bookedCount(state, slot.id) < slot.capacity); if (next) selectSlot(next.id); }, 500); } });
   }
   function safe(fn, name) { try { fn(); } catch (error) { console.warn(`[${name}]`, error); } }
-  function init() { safe(renderPricing, "precios"); safe(renderSlots, "horarios"); safe(initLinks, "enlaces"); safe(initInteractions, "interacciones"); safe(initMarineWeather, "estado-del-mar"); const form = document.querySelector("[data-booking-form]"); if (form) safe(() => handleBooking(form), "reserva"); }
+  async function init() {
+    if (db) {
+      try { await loadRemoteState(); }
+      catch (error) {
+        console.warn("[supabase]", error);
+        const slots = document.querySelector("[data-slot-list]");
+        if (slots) slots.innerHTML = "<p class=\"empty-slots\">La agenda se está actualizando. Escríbenos por WhatsApp para coordinar tu salida.</p>";
+      }
+    }
+    safe(renderPricing, "precios"); safe(renderSlots, "horarios"); safe(initLinks, "enlaces"); safe(initInteractions, "interacciones"); safe(initMarineWeather, "estado-del-mar"); const form = document.querySelector("[data-booking-form]"); if (form) safe(() => handleBooking(form), "reserva");
+  }
   document.addEventListener("DOMContentLoaded", init);
 })();

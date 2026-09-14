@@ -1,3 +1,41 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Panel instructor — Remando Antofagasta</title><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet" /><link rel="stylesheet" href="styles.css?v=20260914" /><link rel="stylesheet" href="admin.css?v=20260914" /><script defer src="assets/config.js?v=20260914"></script><script defer src="admin.js?v=20260914"></script></head>
-<body class="admin-body"><main class="admin-shell"><a class="back-link" href="index.html">← Ver sitio público</a><section class="admin-login" data-login><p class="eyebrow">Acceso instructor</p><h1>Tu mar.<br /><em>Tu agenda.</em></h1><p>Este modo de demostración guarda los datos solo en este navegador. Para reservas reales compartidas y acceso seguro, conecta el backend indicado en la guía.</p><form data-login-form><label class="field"><span>PIN de demostración</span><input name="pin" type="password" required autofocus placeholder="••••" /></label><button class="btn btn-dark" type="submit">Entrar al panel →</button><p class="form-status" data-login-status></p><small>PIN inicial: <code>2026</code> · cámbialo antes de mostrar la demo.</small></form></section><section class="admin-app" data-admin-app hidden><header class="admin-header"><div><p class="eyebrow">Panel instructor</p><h1>Agenda de <em>Remando.</em></h1></div><div><a class="back-link" href="index.html">Ver web ↗</a><button class="logout" data-logout>Cerrar sesión</button></div></header><p class="demo-banner">Modo local: las reservas se guardan en este navegador. Los campos de salud son sensibles; no publiques este modo como sistema definitivo.</p><div class="admin-stats" data-stats></div><div class="admin-grid"><section class="admin-card"><div class="card-title"><h2>Próximas clases</h2><button class="small-btn" data-open-slot>+ Agregar horario</button></div><div class="admin-list" data-slots-admin></div></section><section class="admin-card"><div class="card-title"><h2>Solicitudes</h2><button class="small-btn" data-export>Exportar CSV</button></div><div class="admin-list" data-bookings-admin></div></section></div><div class="admin-grid"><section class="admin-card"><div class="card-title"><h2>Valores editables</h2></div><form class="price-editor" data-price-form></form></section><section class="admin-card"><div class="card-title"><h2>Contacto y ajustes</h2></div><form class="settings-form" data-settings-form><label class="field"><span>WhatsApp del negocio</span><input name="whatsappNumber" inputmode="tel" placeholder="56912345678" /></label><label class="field"><span>Punto de encuentro</span><input name="location" /></label><button class="btn btn-dark" type="submit">Guardar ajustes →</button><p class="form-status" data-settings-status></p></form></section></div><dialog class="slot-dialog" data-slot-dialog><form method="dialog" data-slot-form><div class="card-title"><h2>Nuevo horario</h2><button class="close-dialog" value="cancel" aria-label="Cerrar">×</button></div><div class="form-grid"><label class="field"><span>Fecha</span><input name="date" type="date" required /></label><label class="field"><span>Hora</span><input name="time" type="time" required /></label><label class="field"><span>Tipo de salida</span><select name="serviceId" data-service-options></select></label><label class="field"><span>Cupos</span><input name="capacity" type="number" min="1" max="16" value="4" required /></label></div><div class="dialog-actions"><button class="small-btn" value="cancel">Cancelar</button><button class="btn btn-dark" value="default" type="submit">Agregar horario →</button></div></form></dialog></section></main></body></html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Panel instructor — Remando Antofagasta</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20260914-supabase" />
+    <link rel="stylesheet" href="admin.css?v=20260914-supabase" />
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="assets/config.js?v=20260914-supabase"></script>
+    <script defer src="admin.js?v=20260914-supabase"></script>
+  </head>
+  <body class="admin-body">
+    <main class="admin-shell">
+      <a class="back-link" href="index.html">← Ver sitio público</a>
+      <section class="admin-login" data-login>
+        <p class="eyebrow">Acceso instructor</p>
+        <h1>Tu mar.<br /><em>Tu agenda.</em></h1>
+        <p>Ingresa con un enlace seguro enviado a tu correo. Las reservas y la información de seguridad quedan protegidas en Supabase.</p>
+        <form data-login-form>
+          <label class="field"><span>Correo autorizado</span><input name="email" type="email" autocomplete="email" required placeholder="tu@correo.cl" /></label>
+          <button class="btn btn-dark" type="submit">Enviar enlace de acceso →</button>
+          <p class="form-status" data-login-status></p>
+          <small>Solo el correo autorizado del instructor puede abrir la agenda.</small>
+        </form>
+      </section>
+      <section class="admin-app" data-admin-app hidden>
+        <header class="admin-header"><div><p class="eyebrow">Panel instructor</p><h1>Agenda de <em>Remando.</em></h1></div><div><a class="back-link" href="index.html">Ver web ↗</a><button class="logout" data-logout>Cerrar sesión</button></div></header>
+        <p class="demo-banner">Panel conectado: los datos de emergencia e información relevante solo son visibles para el instructor autorizado.</p>
+        <div class="admin-stats" data-stats></div>
+        <div class="admin-grid"><section class="admin-card"><div class="card-title"><h2>Próximas clases</h2><button class="small-btn" data-open-slot>+ Agregar horario</button></div><div class="admin-list" data-slots-admin></div></section><section class="admin-card"><div class="card-title"><h2>Solicitudes</h2><button class="small-btn" data-export>Exportar CSV</button></div><div class="admin-list" data-bookings-admin></div></section></div>
+        <div class="admin-grid"><section class="admin-card"><div class="card-title"><h2>Valores editables</h2></div><form class="price-editor" data-price-form></form></section><section class="admin-card"><div class="card-title"><h2>Contacto y ajustes</h2></div><form class="settings-form" data-settings-form><label class="field"><span>WhatsApp del negocio</span><input name="whatsappNumber" inputmode="tel" placeholder="56912345678" /></label><label class="field"><span>Punto de encuentro</span><input name="location" /></label><button class="btn btn-dark" type="submit">Guardar ajustes →</button><p class="form-status" data-settings-status></p></form></section></div>
+        <dialog class="slot-dialog" data-slot-dialog><form method="dialog" data-slot-form><div class="card-title"><h2>Nuevo horario</h2><button class="close-dialog" value="cancel" aria-label="Cerrar">×</button></div><div class="form-grid"><label class="field"><span>Fecha</span><input name="date" type="date" required /></label><label class="field"><span>Hora</span><input name="time" type="time" required /></label><label class="field"><span>Tipo de salida</span><select name="serviceId" data-service-options></select></label><label class="field"><span>Cupos</span><input name="capacity" type="number" min="1" max="32" value="4" required /></label></div><div class="dialog-actions"><button class="small-btn" value="cancel">Cancelar</button><button class="btn btn-dark" value="default" type="submit">Agregar horario →</button></div></form></dialog>
+      </section>
+    </main>
+  </body>
+</html>
