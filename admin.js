@@ -3,7 +3,7 @@
   const CONFIG = window.REMANDO_CONFIG || {};
   const remote = CONFIG.supabase || {};
   const db = remote.url && remote.anonKey && window.supabase ? window.supabase.createClient(remote.url, remote.anonKey) : null;
-  let state = { services: [], slots: [], bookings: [], settings: {}, templates: [], templatesReady: true };
+  let state = { services: [], slots: [], bookings: [], settings: {}, templates: [], templatesReady: true, incomes: [], incomesReady: true };
   let bookingFilter = "all";
   const esc = value => String(value || "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
   const money = value => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -11,21 +11,24 @@
   const timeLabel = value => new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Santiago" }).format(new Date(value));
   const inputDate = value => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Santiago" }).format(new Date(value));
   const weekdayLabel = value => (["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][Number(value)] || "Día");
+  const monthKey = value => inputDate(value).slice(0, 7);
+  const categoryLabel = value => ({ transferencia: "Transferencia", efectivo: "Efectivo", abono: "Abono", otro: "Otro" }[value] || "Ingreso");
   const service = id => state.services.find(item => item.id === id) || { name: "Salida", detail: "", price: 0 };
   const slotFor = booking => state.slots.find(slot => slot.id === booking.slot_id);
   const count = slotId => state.bookings.filter(item => item.slot_id === slotId && item.status !== "cancelled").length;
   const statusLabel = status => ({ pending: "pendiente", confirmed: "confirmada", cancelled: "cancelada" }[status] || status);
 
   async function loadState() {
-    const [services, slots, bookings, settings, templates] = await Promise.all([
+    const [services, slots, bookings, settings, templates, incomes] = await Promise.all([
       db.from("services").select("*").order("sort_order"),
       db.from("slots").select("*").order("starts_at"),
       db.from("bookings").select("*").order("created_at", { ascending: false }),
       db.from("business_settings").select("key,value"),
-      db.from("weekly_slot_templates").select("*").order("weekday").order("starts_time")
+      db.from("weekly_slot_templates").select("*").order("weekday").order("starts_time"),
+      db.from("manual_income_entries").select("*").order("entry_date", { ascending: false }).order("created_at", { ascending: false })
     ]);
     for (const result of [services, slots, bookings, settings]) if (result.error) throw result.error;
-    state = { services: services.data || [], slots: slots.data || [], bookings: bookings.data || [], settings: Object.fromEntries((settings.data || []).map(item => [item.key, item.value])), templates: templates.data || [], templatesReady: !templates.error };
+    state = { services: services.data || [], slots: slots.data || [], bookings: bookings.data || [], settings: Object.fromEntries((settings.data || []).map(item => [item.key, item.value])), templates: templates.data || [], templatesReady: !templates.error, incomes: incomes.data || [], incomesReady: !incomes.error };
   }
 
   function filteredBookings() {
@@ -49,6 +52,19 @@
       <article class="stat"><span>Confirmadas</span><strong>${confirmed.length}</strong></article>
       <article class="stat"><span>Clientes activos</span><strong>${clients}</strong></article>
       <article class="stat income"><span>Ingreso confirmado</span><strong>${money(income)}</strong></article>`;
+  }
+
+  function renderFinance() {
+    const today = inputDate(new Date()); const month = today.slice(0, 7);
+    const bookingIncome = key => state.bookings.filter(item => item.status === "confirmed" && slotFor(item) && inputDate(slotFor(item).starts_at).startsWith(key)).reduce((sum, item) => sum + Number(service(slotFor(item).service_id).price || 0), 0);
+    const manualIncome = key => state.incomes.filter(item => String(item.entry_date || "").startsWith(key)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const todayBookings = bookingIncome(today); const monthBookings = bookingIncome(month); const todayManual = manualIncome(today); const monthManual = manualIncome(month);
+    const summary = document.querySelector("[data-finance-summary]");
+    summary.innerHTML = `<article><span>Total de hoy</span><strong>${money(todayBookings + todayManual)}</strong><small>${money(todayManual)} registrado · ${money(todayBookings)} en reservas confirmadas</small></article><article><span>Acumulado del mes</span><strong>${money(monthBookings + monthManual)}</strong><small>${money(monthManual)} manual · ${money(monthBookings)} confirmado</small></article><article><span>Ingresos manuales</span><strong>${state.incomes.length}</strong><small>Movimientos registrados</small></article>`;
+    const list = document.querySelector("[data-income-list]");
+    if (!state.incomesReady) { list.innerHTML = "<p class=\"empty-admin\">La caja se activará al actualizar la base de datos.</p>"; return; }
+    list.innerHTML = state.incomes.length ? state.incomes.slice(0, 10).map(item => `<article class="admin-row income-row"><div><strong>${money(item.amount)} · ${esc(categoryLabel(item.category))}</strong><p>${esc(item.note || "Ingreso sin detalle")}</p><small>${esc(item.entry_date)}</small></div><div class="row-actions"><button class="icon-button" data-delete-income="${item.id}" aria-label="Eliminar ingreso">×</button></div></article>`).join("") : "<p class=\"empty-admin\">Aún no registras ingresos manuales.</p>";
+    const date = document.querySelector("[data-income-form]").elements.entryDate; if (!date.value) date.value = today;
   }
 
   function renderSlots() {
@@ -82,7 +98,7 @@
     document.querySelector("[data-template-service-options]").innerHTML = serviceOptions;
   }
 
-  function render() { renderStats(); renderSlots(); renderTemplates(); renderBookings(); renderEditors(); }
+  function render() { renderStats(); renderFinance(); renderSlots(); renderTemplates(); renderBookings(); renderEditors(); }
   async function refresh() { await loadState(); render(); }
   function showStatus(selector, text, type) { const target = document.querySelector(selector); if (!target) return; target.textContent = text; target.className = `form-status ${type || ""}`; }
   async function ensureAdmin() { const { data, error } = await db.rpc("is_admin"); if (error || !data) throw new Error("Esta cuenta no tiene acceso de instructor."); }
@@ -125,7 +141,7 @@
     document.querySelector("[data-booking-search]").addEventListener("input", renderBookings);
     document.querySelector("[data-close-booking]").addEventListener("click", () => document.querySelector("[data-booking-dialog]").close());
     document.addEventListener("click", async event => {
-      const toggle = event.target.closest("[data-toggle-slot]"); const remove = event.target.closest("[data-delete-slot]"); const status = event.target.closest("[data-booking-status]"); const edit = event.target.closest("[data-edit-slot]"); const view = event.target.closest("[data-view-booking]"); const filter = event.target.closest("[data-booking-filter]"); const templateEdit = event.target.closest("[data-edit-template]"); const templateToggle = event.target.closest("[data-toggle-template]"); const templateRemove = event.target.closest("[data-delete-template]");
+      const toggle = event.target.closest("[data-toggle-slot]"); const remove = event.target.closest("[data-delete-slot]"); const status = event.target.closest("[data-booking-status]"); const edit = event.target.closest("[data-edit-slot]"); const view = event.target.closest("[data-view-booking]"); const filter = event.target.closest("[data-booking-filter]"); const templateEdit = event.target.closest("[data-edit-template]"); const templateToggle = event.target.closest("[data-toggle-template]"); const templateRemove = event.target.closest("[data-delete-template]"); const incomeRemove = event.target.closest("[data-delete-income]");
       try {
         if (filter) { bookingFilter = filter.dataset.bookingFilter; document.querySelectorAll("[data-booking-filter]").forEach(button => button.classList.toggle("is-active", button === filter)); renderBookings(); }
         if (edit) openSlotDialog(state.slots.find(item => item.id === edit.dataset.editSlot));
@@ -135,6 +151,7 @@
         if (remove) { const { error } = await db.from("slots").delete().eq("id", remove.dataset.deleteSlot); if (error) throw error; await refresh(); }
         if (templateToggle) { const row = state.templates.find(item => item.id === templateToggle.dataset.toggleTemplate); const { error } = await db.from("weekly_slot_templates").update({ active: !row.active, updated_at: new Date().toISOString() }).eq("id", row.id); if (error) throw error; await db.rpc("refresh_booking_week"); await refresh(); }
         if (templateRemove) { const { error } = await db.from("weekly_slot_templates").delete().eq("id", templateRemove.dataset.deleteTemplate); if (error) throw error; await refresh(); }
+        if (incomeRemove) { const { error } = await db.from("manual_income_entries").delete().eq("id", incomeRemove.dataset.deleteIncome); if (error) throw error; await refresh(); }
         if (status) { const { error } = await db.from("bookings").update({ status: status.dataset.nextStatus }).eq("id", status.dataset.bookingStatus); if (error) throw error; await refresh(); }
       } catch (error) { alert(error.message || "No pudimos guardar el cambio."); }
     });
@@ -152,6 +169,12 @@
       if (result.error) { alert(result.error.message); return; }
       const scheduled = await db.rpc("refresh_booking_week"); if (scheduled.error) { alert(scheduled.error.message); return; }
       document.querySelector("[data-template-dialog]").close(); await refresh();
+    });
+    document.querySelector("[data-income-form]").addEventListener("submit", async event => {
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
+      const { error } = await db.from("manual_income_entries").insert({ amount: Number(values.amount), entry_date: values.entryDate, category: values.category, note: String(values.note || "").trim() || null });
+      showStatus("[data-income-status]", error ? error.message : "Ingreso registrado en caja.", error ? "error" : "success");
+      if (!error) { form.reset(); await refresh(); }
     });
     document.querySelector("[data-price-form]").addEventListener("submit", async event => { event.preventDefault(); for (const input of event.currentTarget.querySelectorAll("[data-price-id]")) { const price = input.value === "" ? null : Number(input.value); const { error } = await db.from("services").update({ price }).eq("id", input.dataset.priceId); if (error) { showStatus("[data-price-status]", error.message, "error"); return; } } showStatus("[data-price-status]", "Valores actualizados en la web.", "success"); await refresh(); });
     document.querySelector("[data-settings-form]").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); const rows = Object.entries(values).map(([key, value]) => ({ key, value: value.trim(), updated_at: new Date().toISOString() })); const { error } = await db.from("business_settings").upsert(rows); showStatus("[data-settings-status]", error ? error.message : "Ajustes guardados en la web.", error ? "error" : "success"); if (!error) await refresh(); });

@@ -212,6 +212,22 @@ drop policy if exists "admins manage weekly templates" on public.weekly_slot_tem
 create policy "admins manage weekly templates" on public.weekly_slot_templates
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
+-- Caja: ingresos que el instructor registra manualmente (efectivo, transferencias o abonos).
+create table if not exists public.manual_income_entries (
+  id uuid primary key default gen_random_uuid(),
+  amount numeric(12, 0) not null check (amount > 0),
+  entry_date date not null default current_date,
+  category text not null default 'otro' check (category in ('transferencia', 'efectivo', 'abono', 'otro')),
+  note text,
+  created_by uuid references auth.users(id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.manual_income_entries enable row level security;
+drop policy if exists "admins manage manual income" on public.manual_income_entries;
+create policy "admins manage manual income" on public.manual_income_entries
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
 create or replace function public.refresh_booking_week()
 returns integer
 language plpgsql
