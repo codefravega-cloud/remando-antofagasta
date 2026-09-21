@@ -194,6 +194,103 @@ $$;
 revoke all on function public.create_booking(uuid, text, text, text, integer, text, text, text, timestamptz) from public;
 grant execute on function public.create_booking(uuid, text, text, text, integer, text, text, text, timestamptz) to anon, authenticated;
 
+-- Agenda semanal: cada regla se replica desde el lunes vigente hasta el lunes siguiente.
+create table if not exists public.weekly_slot_templates (
+  id uuid primary key default gen_random_uuid(),
+  weekday smallint not null check (weekday between 0 and 6), -- 0 domingo, 1 lunes
+  starts_time time not null,
+  service_id text not null references public.services(id) on delete restrict,
+  capacity integer not null check (capacity between 1 and 32),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (weekday, starts_time, service_id)
+);
+
+alter table public.weekly_slot_templates enable row level security;
+drop policy if exists "admins manage weekly templates" on public.weekly_slot_templates;
+create policy "admins manage weekly templates" on public.weekly_slot_templates
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+create or replace function public.refresh_booking_week()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_week_start date := date_trunc('week', timezone('America/Santiago', now()))::date;
+  v_inserted integer := 0;
+begin
+  if auth.uid() is not null and not public.is_admin() then
+    raise exception 'No autorizado';
+  end if;
+
+  insert into public.slots (starts_at, service_id, capacity, active)
+  select ((d::date + t.starts_time) at time zone 'America/Santiago'),
+         t.service_id, t.capacity, true
+    from generate_series(v_week_start, v_week_start + 7, interval '1 day') d
+    join public.weekly_slot_templates t
+      on extract(dow from d)::smallint = t.weekday and t.active
+   where ((d::date + t.starts_time) at time zone 'America/Santiago') > now()
+     and not exists (
+       select 1 from public.slots s
+        where s.starts_at = ((d::date + t.starts_time) at time zone 'America/Santiago')
+          and s.service_id = t.service_id
+     );
+  get diagnostics v_inserted = row_count;
+  return v_inserted;
+end;
+$$;
+
+grant execute on function public.refresh_booking_week() to authenticated;
+
+-- La agenda pública sólo muestra desde el lunes actual hasta el próximo lunes inclusive.
+create or replace function public.available_slots()
+returns table (
+  id uuid,
+  starts_at timestamptz,
+  capacity integer,
+  remaining integer,
+  service_id text,
+  service_name text,
+  service_detail text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select s.id, s.starts_at, s.capacity,
+         s.capacity - count(b.id) filter (where b.status <> 'cancelled')::integer as remaining,
+         v.id, v.name, v.detail
+    from public.slots s
+    join public.services v on v.id = s.service_id and v.active = true
+    left join public.bookings b on b.slot_id = s.id
+   where s.active = true
+     and s.starts_at > now()
+     and s.starts_at >= (date_trunc('week', timezone('America/Santiago', now())) at time zone 'America/Santiago')
+     and s.starts_at < ((date_trunc('week', timezone('America/Santiago', now())) + interval '8 days') at time zone 'America/Santiago')
+   group by s.id, v.id
+  having s.capacity - count(b.id) filter (where b.status <> 'cancelled') > 0
+   order by s.starts_at;
+$$;
+
+-- Se ejecuta cada hora: así se respeta America/Santiago también cuando cambia el horario de verano.
+do $$
+declare v_job_id bigint;
+begin
+  begin
+    create extension if not exists pg_cron with schema extensions;
+    select jobid into v_job_id from cron.job where jobname = 'remando-refresh-booking-week';
+    if v_job_id is not null then perform cron.unschedule(v_job_id); end if;
+    perform cron.schedule('remando-refresh-booking-week', '5 * * * *', 'select public.refresh_booking_week();');
+  exception when insufficient_privilege or undefined_function or undefined_table then
+    raise notice 'pg_cron no disponible; ejecuta refresh_booking_week desde el panel al editar horarios.';
+  end;
+end;
+$$;
+
 -- Catálogo inicial. Es editable desde el panel una vez que el instructor tenga rol.
 insert into public.services (id, name, detail, price, label, featured, sort_order)
 values

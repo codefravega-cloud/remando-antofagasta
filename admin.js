@@ -3,27 +3,29 @@
   const CONFIG = window.REMANDO_CONFIG || {};
   const remote = CONFIG.supabase || {};
   const db = remote.url && remote.anonKey && window.supabase ? window.supabase.createClient(remote.url, remote.anonKey) : null;
-  let state = { services: [], slots: [], bookings: [], settings: {} };
+  let state = { services: [], slots: [], bookings: [], settings: {}, templates: [], templatesReady: true };
   let bookingFilter = "all";
   const esc = value => String(value || "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
   const money = value => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(value || 0));
   const dateLabel = value => new Intl.DateTimeFormat("es-CL", { weekday: "short", day: "numeric", month: "short", timeZone: "America/Santiago" }).format(new Date(value));
   const timeLabel = value => new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Santiago" }).format(new Date(value));
   const inputDate = value => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Santiago" }).format(new Date(value));
+  const weekdayLabel = value => (["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][Number(value)] || "Día");
   const service = id => state.services.find(item => item.id === id) || { name: "Salida", detail: "", price: 0 };
   const slotFor = booking => state.slots.find(slot => slot.id === booking.slot_id);
   const count = slotId => state.bookings.filter(item => item.slot_id === slotId && item.status !== "cancelled").length;
   const statusLabel = status => ({ pending: "pendiente", confirmed: "confirmada", cancelled: "cancelada" }[status] || status);
 
   async function loadState() {
-    const [services, slots, bookings, settings] = await Promise.all([
+    const [services, slots, bookings, settings, templates] = await Promise.all([
       db.from("services").select("*").order("sort_order"),
       db.from("slots").select("*").order("starts_at"),
       db.from("bookings").select("*").order("created_at", { ascending: false }),
-      db.from("business_settings").select("key,value")
+      db.from("business_settings").select("key,value"),
+      db.from("weekly_slot_templates").select("*").order("weekday").order("starts_time")
     ]);
     for (const result of [services, slots, bookings, settings]) if (result.error) throw result.error;
-    state = { services: services.data || [], slots: slots.data || [], bookings: bookings.data || [], settings: Object.fromEntries((settings.data || []).map(item => [item.key, item.value])) };
+    state = { services: services.data || [], slots: slots.data || [], bookings: bookings.data || [], settings: Object.fromEntries((settings.data || []).map(item => [item.key, item.value])), templates: templates.data || [], templatesReady: !templates.error };
   }
 
   function filteredBookings() {
@@ -51,7 +53,14 @@
 
   function renderSlots() {
     const target = document.querySelector("[data-slots-admin]");
-    target.innerHTML = state.slots.length ? state.slots.map(slot => `<article class="admin-row slot-row"><div><strong>${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}</strong><p>${count(slot.id)} de ${slot.capacity} cupos reservados · ${slot.active ? "Visible en la web" : "Oculto"}</p></div><div class="row-actions"><button class="small-btn" data-edit-slot="${slot.id}">Editar</button><button class="small-btn" data-toggle-slot="${slot.id}">${slot.active ? "Ocultar" : "Activar"}</button><button class="icon-button" data-delete-slot="${slot.id}" aria-label="Eliminar horario">×</button></div></article>`).join("") : "<p class=\"empty-admin\">Aún no agregas horarios.</p>";
+    const upcoming = state.slots.filter(slot => new Date(slot.starts_at) > new Date());
+    target.innerHTML = upcoming.length ? upcoming.map(slot => `<article class="admin-row slot-row"><div><strong>${dateLabel(slot.starts_at)} · ${timeLabel(slot.starts_at)} · ${esc(service(slot.service_id).name)}</strong><p>${count(slot.id)} de ${slot.capacity} cupos reservados · ${slot.active ? "Visible en la web" : "Oculto"}</p></div><div class="row-actions"><button class="small-btn" data-edit-slot="${slot.id}">Editar</button><button class="small-btn" data-toggle-slot="${slot.id}">${slot.active ? "Ocultar" : "Activar"}</button><button class="icon-button" data-delete-slot="${slot.id}" aria-label="Eliminar horario">×</button></div></article>`).join("") : "<p class=\"empty-admin\">No hay salidas futuras en esta semana.</p>";
+  }
+
+  function renderTemplates() {
+    const target = document.querySelector("[data-templates-admin]");
+    if (!state.templatesReady) { target.innerHTML = "<p class=\"empty-admin\">La agenda semanal se activará al actualizar la base de datos.</p>"; return; }
+    target.innerHTML = state.templates.length ? state.templates.map(item => `<article class="admin-row template-row"><div><strong>${weekdayLabel(item.weekday)} · ${String(item.starts_time).slice(0, 5)} · ${esc(service(item.service_id).name)}</strong><p>${item.capacity} cupos · ${item.active ? "Se repite cada semana" : "Pausado"}</p></div><div class="row-actions"><button class="small-btn" data-edit-template="${item.id}">Editar</button><button class="small-btn" data-toggle-template="${item.id}">${item.active ? "Pausar" : "Activar"}</button><button class="icon-button" data-delete-template="${item.id}" aria-label="Eliminar horario semanal">×</button></div></article>`).join("") : "<p class=\"empty-admin\">Aún no hay horarios recurrentes. Agrega los días y horas que se repiten cada semana.</p>";
   }
 
   function renderBookings() {
@@ -68,10 +77,12 @@
     const settings = document.querySelector("[data-settings-form]");
     settings.elements.whatsappNumber.value = state.settings.whatsappNumber || "";
     settings.elements.location.value = state.settings.location || CONFIG.location || "Balneario Municipal, Antofagasta";
-    document.querySelector("[data-service-options]").innerHTML = state.services.filter(item => item.active !== false).map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("");
+    const serviceOptions = state.services.filter(item => item.active !== false).map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("");
+    document.querySelector("[data-service-options]").innerHTML = serviceOptions;
+    document.querySelector("[data-template-service-options]").innerHTML = serviceOptions;
   }
 
-  function render() { renderStats(); renderSlots(); renderBookings(); renderEditors(); }
+  function render() { renderStats(); renderSlots(); renderTemplates(); renderBookings(); renderEditors(); }
   async function refresh() { await loadState(); render(); }
   function showStatus(selector, text, type) { const target = document.querySelector(selector); if (!target) return; target.textContent = text; target.className = `form-status ${type || ""}`; }
   async function ensureAdmin() { const { data, error } = await db.rpc("is_admin"); if (error || !data) throw new Error("Esta cuenta no tiene acceso de instructor."); }
@@ -82,6 +93,15 @@
     document.querySelector("[data-slot-dialog-title]").textContent = slot ? "Editar horario" : "Nuevo horario";
     document.querySelector("[data-slot-save]").textContent = slot ? "Guardar cambios →" : "Agregar horario →";
     if (slot) { form.elements.date.value = inputDate(slot.starts_at); form.elements.time.value = timeLabel(slot.starts_at); form.elements.serviceId.value = slot.service_id; form.elements.capacity.value = slot.capacity; }
+    dialog.showModal();
+  }
+
+  function openTemplateDialog(template) {
+    const dialog = document.querySelector("[data-template-dialog]"); const form = document.querySelector("[data-template-form]");
+    form.reset(); form.elements.templateId.value = template?.id || "";
+    document.querySelector("[data-template-dialog-title]").textContent = template ? "Editar horario semanal" : "Nuevo horario semanal";
+    document.querySelector("[data-template-save]").textContent = template ? "Guardar horario semanal →" : "Agregar horario semanal →";
+    if (template) { form.elements.weekday.value = template.weekday; form.elements.startsTime.value = String(template.starts_time).slice(0, 5); form.elements.serviceId.value = template.service_id; form.elements.capacity.value = template.capacity; }
     dialog.showModal();
   }
 
@@ -105,21 +125,33 @@
     document.querySelector("[data-booking-search]").addEventListener("input", renderBookings);
     document.querySelector("[data-close-booking]").addEventListener("click", () => document.querySelector("[data-booking-dialog]").close());
     document.addEventListener("click", async event => {
-      const toggle = event.target.closest("[data-toggle-slot]"); const remove = event.target.closest("[data-delete-slot]"); const status = event.target.closest("[data-booking-status]"); const edit = event.target.closest("[data-edit-slot]"); const view = event.target.closest("[data-view-booking]"); const filter = event.target.closest("[data-booking-filter]");
+      const toggle = event.target.closest("[data-toggle-slot]"); const remove = event.target.closest("[data-delete-slot]"); const status = event.target.closest("[data-booking-status]"); const edit = event.target.closest("[data-edit-slot]"); const view = event.target.closest("[data-view-booking]"); const filter = event.target.closest("[data-booking-filter]"); const templateEdit = event.target.closest("[data-edit-template]"); const templateToggle = event.target.closest("[data-toggle-template]"); const templateRemove = event.target.closest("[data-delete-template]");
       try {
         if (filter) { bookingFilter = filter.dataset.bookingFilter; document.querySelectorAll("[data-booking-filter]").forEach(button => button.classList.toggle("is-active", button === filter)); renderBookings(); }
         if (edit) openSlotDialog(state.slots.find(item => item.id === edit.dataset.editSlot));
         if (view) openBookingDialog(view.dataset.viewBooking);
+        if (templateEdit) openTemplateDialog(state.templates.find(item => item.id === templateEdit.dataset.editTemplate));
         if (toggle) { const row = state.slots.find(item => item.id === toggle.dataset.toggleSlot); const { error } = await db.from("slots").update({ active: !row.active }).eq("id", row.id); if (error) throw error; await refresh(); }
         if (remove) { const { error } = await db.from("slots").delete().eq("id", remove.dataset.deleteSlot); if (error) throw error; await refresh(); }
+        if (templateToggle) { const row = state.templates.find(item => item.id === templateToggle.dataset.toggleTemplate); const { error } = await db.from("weekly_slot_templates").update({ active: !row.active, updated_at: new Date().toISOString() }).eq("id", row.id); if (error) throw error; await db.rpc("refresh_booking_week"); await refresh(); }
+        if (templateRemove) { const { error } = await db.from("weekly_slot_templates").delete().eq("id", templateRemove.dataset.deleteTemplate); if (error) throw error; await refresh(); }
         if (status) { const { error } = await db.from("bookings").update({ status: status.dataset.nextStatus }).eq("id", status.dataset.bookingStatus); if (error) throw error; await refresh(); }
       } catch (error) { alert(error.message || "No pudimos guardar el cambio."); }
     });
     document.querySelector("[data-open-slot]").addEventListener("click", () => openSlotDialog());
+    document.querySelector("[data-open-template]").addEventListener("click", () => openTemplateDialog());
     document.querySelector("[data-slot-form]").addEventListener("submit", async event => {
       event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries()); const payload = { starts_at: new Date(`${values.date}T${values.time}:00`).toISOString(), service_id: values.serviceId, capacity: Number(values.capacity), active: true };
       const result = values.slotId ? await db.from("slots").update(payload).eq("id", values.slotId) : await db.from("slots").insert(payload);
       if (result.error) { alert(result.error.message); return; } document.querySelector("[data-slot-dialog]").close(); await refresh();
+    });
+    document.querySelector("[data-template-form]").addEventListener("submit", async event => {
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
+      const payload = { weekday: Number(values.weekday), starts_time: values.startsTime, service_id: values.serviceId, capacity: Number(values.capacity), active: true, updated_at: new Date().toISOString() };
+      const result = values.templateId ? await db.from("weekly_slot_templates").update(payload).eq("id", values.templateId) : await db.from("weekly_slot_templates").insert(payload);
+      if (result.error) { alert(result.error.message); return; }
+      const scheduled = await db.rpc("refresh_booking_week"); if (scheduled.error) { alert(scheduled.error.message); return; }
+      document.querySelector("[data-template-dialog]").close(); await refresh();
     });
     document.querySelector("[data-price-form]").addEventListener("submit", async event => { event.preventDefault(); for (const input of event.currentTarget.querySelectorAll("[data-price-id]")) { const price = input.value === "" ? null : Number(input.value); const { error } = await db.from("services").update({ price }).eq("id", input.dataset.priceId); if (error) { showStatus("[data-price-status]", error.message, "error"); return; } } showStatus("[data-price-status]", "Valores actualizados en la web.", "success"); await refresh(); });
     document.querySelector("[data-settings-form]").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); const rows = Object.entries(values).map(([key, value]) => ({ key, value: value.trim(), updated_at: new Date().toISOString() })); const { error } = await db.from("business_settings").upsert(rows); showStatus("[data-settings-status]", error ? error.message : "Ajustes guardados en la web.", error ? "error" : "success"); if (!error) await refresh(); });
