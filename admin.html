@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="admin.css?v=20260921-admin-v3" />
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script defer src="assets/config.js?v=20260914-supabase"></script>
-    <script defer src="admin.js?v=20260921-admin-v3"></script>
+    <script defer src="admin.js?v=20260921-admin-v4"></script>
   </head>
   <body class="admin-body">
     <main class="admin-shell">
@@ -20,12 +20,13 @@
       <section class="admin-login" data-login>
         <p class="eyebrow">Acceso instructor</p>
         <h1>Tu mar.<br /><em>Tu agenda.</em></h1>
-        <p>Ingresa con un enlace seguro enviado a tu correo. Las reservas y la información de seguridad quedan protegidas en Supabase.</p>
+        <p>Ingresa con tu correo y contraseña. Las reservas y la información de seguridad quedan protegidas en Supabase.</p>
         <form data-login-form>
           <label class="field"><span>Correo autorizado</span><input name="email" type="email" autocomplete="email" required placeholder="tu@correo.cl" /></label>
-          <button class="btn btn-dark" type="submit">Enviar enlace de acceso →</button>
+          <label class="field"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" required placeholder="••••••••" /></label>
+          <button class="btn btn-dark" type="submit">Entrar al panel →</button>
           <p class="form-status" data-login-status></p>
-          <small>Solo el correo autorizado del instructor puede abrir la agenda.</small>
+          <small>Solo las dos cuentas autorizadas de instructor pueden abrir la agenda.</small>
         </form>
       </section>
       <section class="admin-app" data-admin-app hidden>
