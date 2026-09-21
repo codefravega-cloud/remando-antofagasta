@@ -228,6 +228,18 @@ drop policy if exists "admins manage manual income" on public.manual_income_entr
 create policy "admins manage manual income" on public.manual_income_entries
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
+-- Ficha de cada clase registrada manualmente: mantiene los datos necesarios para operar con seguridad.
+alter table public.manual_income_entries
+  add column if not exists client_name text,
+  add column if not exists client_phone text,
+  add column if not exists service_name text,
+  add column if not exists class_date date,
+  add column if not exists class_time time,
+  add column if not exists participants integer check (participants > 0),
+  add column if not exists emergency_name text,
+  add column if not exists emergency_phone text,
+  add column if not exists health_info text;
+
 create or replace function public.refresh_booking_week()
 returns integer
 language plpgsql

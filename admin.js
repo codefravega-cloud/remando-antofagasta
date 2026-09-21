@@ -63,8 +63,15 @@
     summary.innerHTML = `<article><span>Total de hoy</span><strong>${money(todayBookings + todayManual)}</strong><small>${money(todayManual)} registrado · ${money(todayBookings)} en reservas confirmadas</small></article><article><span>Acumulado del mes</span><strong>${money(monthBookings + monthManual)}</strong><small>${money(monthManual)} manual · ${money(monthBookings)} confirmado</small></article><article><span>Ingresos manuales</span><strong>${state.incomes.length}</strong><small>Movimientos registrados</small></article>`;
     const list = document.querySelector("[data-income-list]");
     if (!state.incomesReady) { list.innerHTML = "<p class=\"empty-admin\">La caja se activará al actualizar la base de datos.</p>"; return; }
-    list.innerHTML = state.incomes.length ? state.incomes.slice(0, 10).map(item => `<article class="admin-row income-row"><div><strong>${money(item.amount)} · ${esc(categoryLabel(item.category))}</strong><p>${esc(item.note || "Ingreso sin detalle")}</p><small>${esc(item.entry_date)}</small></div><div class="row-actions"><button class="icon-button" data-delete-income="${item.id}" aria-label="Eliminar ingreso">×</button></div></article>`).join("") : "<p class=\"empty-admin\">Aún no registras ingresos manuales.</p>";
-    const date = document.querySelector("[data-income-form]").elements.entryDate; if (!date.value) date.value = today;
+    list.innerHTML = state.incomes.length ? state.incomes.slice(0, 10).map(item => {
+      const whatsapp = String(item.client_phone || "").replace(/\D/g, ""); const classMoment = item.class_date ? `${esc(item.class_date)}${item.class_time ? ` · ${esc(String(item.class_time).slice(0, 5))}` : ""}` : esc(item.entry_date);
+      const serviceName = item.service_name || "Ingreso general";
+      const person = item.client_name ? `<p class="income-client"><strong>${esc(item.client_name)}</strong>${item.participants ? ` · ${Number(item.participants)} participante${Number(item.participants) === 1 ? "" : "s"}` : ""}</p>` : "";
+      const contact = item.client_phone ? `<small>${esc(item.client_phone)} ${whatsapp ? `<a href="https://wa.me/${whatsapp}" target="_blank" rel="noreferrer">WhatsApp ↗</a>` : ""}</small>` : "";
+      const details = [item.health_info, item.emergency_name ? `Emergencia: ${item.emergency_name}${item.emergency_phone ? ` · ${item.emergency_phone}` : ""}` : "", item.note].filter(Boolean).map(esc).join(" · ");
+      return `<article class="admin-row income-row"><div><strong>${money(item.amount)} · ${esc(categoryLabel(item.category))}</strong>${person}<p>${esc(serviceName)} · ${classMoment}</p>${details ? `<small class="income-details">${details}</small>` : ""}${contact}</div><div class="row-actions"><button class="icon-button" data-delete-income="${item.id}" aria-label="Eliminar ingreso">×</button></div></article>`;
+    }).join("") : "<p class=\"empty-admin\">Aún no registras clases o ingresos manuales.</p>";
+    const form = document.querySelector("[data-income-form]"); const date = form.elements.entryDate; const classDate = form.elements.classDate; if (!date.value) date.value = today; if (!classDate.value) classDate.value = today;
   }
 
   function renderSlots() {
@@ -96,6 +103,7 @@
     const serviceOptions = state.services.filter(item => item.active !== false).map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join("");
     document.querySelector("[data-service-options]").innerHTML = serviceOptions;
     document.querySelector("[data-template-service-options]").innerHTML = serviceOptions;
+    document.querySelector("[data-income-service-options]").innerHTML = `<option value="" selected disabled>Selecciona una clase</option>${state.services.filter(item => item.active !== false).map(item => `<option value="${esc(item.name)}">${esc(item.name)}</option>`).join("")}`;
   }
 
   function render() { renderStats(); renderFinance(); renderSlots(); renderTemplates(); renderBookings(); renderEditors(); }
@@ -172,8 +180,8 @@
     });
     document.querySelector("[data-income-form]").addEventListener("submit", async event => {
       event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
-      const { error } = await db.from("manual_income_entries").insert({ amount: Number(values.amount), entry_date: values.entryDate, category: values.category, note: String(values.note || "").trim() || null });
-      showStatus("[data-income-status]", error ? error.message : "Ingreso registrado en caja.", error ? "error" : "success");
+      const { error } = await db.from("manual_income_entries").insert({ amount: Number(values.amount), entry_date: values.entryDate, category: values.category, note: String(values.note || "").trim() || null, client_name: String(values.clientName || "").trim(), client_phone: String(values.clientPhone || "").trim(), service_name: String(values.serviceId || "").trim(), class_date: values.classDate, class_time: values.classTime, participants: Number(values.participants), emergency_name: String(values.emergencyName || "").trim() || null, emergency_phone: String(values.emergencyPhone || "").trim() || null, health_info: String(values.healthInfo || "").trim() || null });
+      showStatus("[data-income-status]", error ? error.message : "Clase e ingreso registrados en caja.", error ? "error" : "success");
       if (!error) { form.reset(); await refresh(); }
     });
     document.querySelector("[data-price-form]").addEventListener("submit", async event => { event.preventDefault(); for (const input of event.currentTarget.querySelectorAll("[data-price-id]")) { const price = input.value === "" ? null : Number(input.value); const { error } = await db.from("services").update({ price }).eq("id", input.dataset.priceId); if (error) { showStatus("[data-price-status]", error.message, "error"); return; } } showStatus("[data-price-status]", "Valores actualizados en la web.", "success"); await refresh(); });
